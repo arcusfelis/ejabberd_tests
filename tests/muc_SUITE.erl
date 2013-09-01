@@ -1934,8 +1934,8 @@ deny_entry_nick_conflict(Config) ->
     escalus:story(Config, [1, 1, 1], fun(_Alice,  Bob, Eve) ->
         Enter_room_stanza = stanza_muc_enter_room(?config(room, Config), escalus_utils:get_username(Bob)), 
         escalus:send(Bob, Enter_room_stanza),
-        escalus:send(Eve, Enter_room_stanza),
         escalus:wait_for_stanzas(Bob, 2),
+        escalus:send(Eve, Enter_room_stanza),
         escalus_assert:is_error(escalus:wait_for_stanza(Eve), <<"cancel">>, <<"conflict">>)
     end).
 
@@ -1984,9 +1984,11 @@ send_history(Config) ->
 		Msg= <<"Hi, Bob!">>,
 		Msg2= <<"Hi, Alice!">>,
 		escalus:send(Alice,escalus_stanza:groupchat_to(room_address(?config(room, Config)), Msg)),
+		escalus:wait_for_stanzas(Alice, 1),
+		escalus:wait_for_stanzas(Bob, 1),
 		escalus:send(Bob,escalus_stanza:groupchat_to(room_address(?config(room, Config)), Msg2)),
-		escalus:wait_for_stanzas(Alice, 2),
-		escalus:wait_for_stanzas(Bob, 2),
+		escalus:wait_for_stanzas(Alice, 1),
+		escalus:wait_for_stanzas(Bob, 1),
 
 		%Eve enters and receives the presences, the message history and finally the topic
         escalus:send(Eve, stanza_muc_enter_room(?config(room, Config), nick(Eve))),
@@ -2356,8 +2358,8 @@ one2one_chat_to_muc(Config) ->
         is_invitation(escalus:wait_for_stanza(Eve)),
         %Bob and Eve accept the invitations
         escalus:send(Bob, stanza_muc_enter_room(Room, <<"bob">>)),
-        escalus:send(Eve, stanza_muc_enter_room(Room, <<"eve">>)),
         escalus:wait_for_stanzas(Bob, 2), %presences; bob receives the history before he receves Eves presence
+        escalus:send(Eve, stanza_muc_enter_room(Room, <<"eve">>)),
         escalus:wait_for_stanzas(Eve, 3), %presences
         %Bob and Eve receive the history
         is_history_message_correct(Room, <<"alice">>,<<"groupchat">>,<<"Hi,Bob!">>, escalus:wait_for_stanza(Bob)),
