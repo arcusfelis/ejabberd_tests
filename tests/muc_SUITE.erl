@@ -118,6 +118,7 @@ groups() -> [
 %nick registration in a room is not implemented and will not be tested
                                      groupchat_user_enter,
                                      groupchat_user_enter_no_nickname,
+                                     groupchat_user_enter_and_exit,
                                      muc_user_enter,
                                      enter_non_anonymous_room,
                                      deny_access_to_password_protected_room,
@@ -346,6 +347,11 @@ init_per_testcase(CaseName = groupchat_user_enter, Config) ->
 init_per_testcase(CaseName = groupchat_user_enter_no_nickname, Config) ->
     [Alice | _] = ?config(escalus_users, Config),
     Config1 = start_room(Config, Alice, <<"alicesroom">>, <<"aliceonchat">>, []),
+    escalus:init_per_testcase(CaseName, Config1);
+
+init_per_testcase(CaseName = groupchat_user_enter_and_exit, Config) ->
+    [Alice | _] = ?config(escalus_users, Config),
+    Config1 = start_room(Config, Alice, <<"alicesroom">>, <<"aliceonchat">>, [{persistent, true}]),
     escalus:init_per_testcase(CaseName, Config1);
 
 init_per_testcase(CaseName = muc_user_enter, Config) ->
@@ -584,6 +590,11 @@ end_per_testcase(CaseName = groupchat_user_enter_no_nickname, Config) ->
     escalus:end_per_testcase(CaseName, Config),
     timer:sleep(3000);
 
+end_per_testcase(CaseName = groupchat_user_enter_and_exit, Config) ->
+    destroy_room(Config),
+    escalus:end_per_testcase(CaseName, Config),
+    timer:sleep(3000);
+
 end_per_testcase(CaseName = muc_user_enter, Config) ->
     destroy_room(Config),
     escalus:end_per_testcase(CaseName, Config),
@@ -743,6 +754,7 @@ end_per_testcase(CaseName, Config) ->
 %%  Examples 84-85
 moderator_subject(Config) ->
     escalus:story(Config, [1], fun(Alice) ->
+        assert_empty_room(Config),
         %% Alice joins room
         escalus:send(Alice, stanza_muc_enter_room(?config(room, Config), <<"alice">>)),
         escalus:wait_for_stanzas(Alice, 2),
@@ -764,6 +776,7 @@ moderator_subject(Config) ->
 %%  however ejabberd provides it from chatroom@service
 moderator_subject_unauthorized(Config) ->
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
+        assert_empty_room(Config),
         %% Alice joins room
         escalus:send(Alice, stanza_muc_enter_room(?config(room, Config), <<"alice">>)),
         escalus:wait_for_stanzas(Alice, 2),
@@ -795,6 +808,7 @@ moderator_subject_unauthorized(Config) ->
 %%  Apparently user has to be in the room to kick someone, however XEP doesn't need that
 moderator_kick(Config) ->
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
+        assert_empty_room(Config),
         %% Alice joins room
         escalus:send(Alice, stanza_muc_enter_room(?config(room, Config), <<"alice">>)),
         escalus:wait_for_stanzas(Alice, 2),
@@ -823,6 +837,7 @@ moderator_kick(Config) ->
 
 moderator_kick_with_reason(Config) ->
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
+        assert_empty_room(Config),
         %% Alice joins room
         escalus:send(Alice, stanza_muc_enter_room(?config(room, Config), <<"alice">>)),
         escalus:wait_for_stanzas(Alice, 2),
@@ -854,6 +869,7 @@ moderator_kick_with_reason(Config) ->
 %%  Example 93
 moderator_kick_unauthorized(Config) ->
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
+        assert_empty_room(Config),
         %% Alice joins room
         escalus:send(Alice, stanza_muc_enter_room(?config(room, Config), <<"alice">>)),
         escalus:wait_for_stanzas(Alice, 2),
@@ -876,6 +892,7 @@ moderator_kick_unauthorized(Config) ->
 %%  Examples 94-101
 moderator_voice(Config) ->
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
+        assert_empty_room(Config),
         %% Alice joins room
         escalus:send(Alice, stanza_muc_enter_room(?config(room, Config), <<"alice">>)),
         escalus:wait_for_stanzas(Alice, 2),
@@ -920,6 +937,7 @@ moderator_voice(Config) ->
 
 moderator_voice_with_reason(Config) ->
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
+        assert_empty_room(Config),
         %% Alice joins room
         escalus:send(Alice, stanza_muc_enter_room(?config(room, Config), <<"alice">>)),
         escalus:wait_for_stanzas(Alice, 2),
@@ -969,6 +987,7 @@ moderator_voice_with_reason(Config) ->
 %%  Example 102, 107
 moderator_voice_unauthorized(Config) ->
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
+        assert_empty_room(Config),
         %% Alice joins room
         escalus:send(Alice, stanza_muc_enter_room(?config(room, Config), <<"alice">>)),
         escalus:wait_for_stanzas(Alice, 2),
@@ -993,6 +1012,7 @@ moderator_voice_unauthorized(Config) ->
 %%  if she isn't in the room
 moderator_voice_list(Config) ->
     escalus:story(Config, [1,1,1], fun(Alice, Bob, Kate) ->
+        assert_empty_room(Config),
         %% Alice joins room
         escalus:send(Alice, stanza_muc_enter_room(?config(room, Config), <<"alice">>)),
         escalus:wait_for_stanzas(Alice, 2),
@@ -1076,6 +1096,7 @@ moderator_voice_list(Config) ->
 %%  Examples 108-109
 moderator_voice_approval(Config) ->
     escalus:story(Config, [1, 1], fun(Alice, Bob) ->
+        assert_empty_room(Config),
         %% Alice joins room
         escalus:send(Alice, stanza_muc_enter_room(?config(room, Config), <<"alice">>)),
         escalus:wait_for_stanzas(Alice, 2),
@@ -1104,6 +1125,7 @@ moderator_voice_approval(Config) ->
 
 moderator_voice_forbidden(Config) ->
     escalus:story(Config, [1, 1], fun(Alice, Bob) ->
+        assert_empty_room(Config),
         %% Alice joins room
         escalus:send(Alice, stanza_muc_enter_room(?config(room, Config), <<"alice">>)),
         escalus:wait_for_stanzas(Alice, 2),
@@ -1125,6 +1147,7 @@ moderator_voice_forbidden(Config) ->
 
 moderator_voice_not_occupant(Config) ->
     escalus:story(Config, [1, 1], fun(Alice, Bob) ->
+        assert_empty_room(Config),
         %% Alice tries to send request approval while she isn't in the room
         Appr = stanza_voice_request_approval(?config(room, Config),
             escalus_utils:get_short_jid(Bob), <<"bob">>),
@@ -1137,6 +1160,7 @@ moderator_voice_not_occupant(Config) ->
 
 moderator_voice_nonick(Config) ->
     escalus:story(Config, [1, 1], fun(Alice, Bob) ->
+        assert_empty_room(Config),
         %% Alice joins room
         escalus:send(Alice, stanza_muc_enter_room(?config(room, Config), <<"alice">>)),
         escalus:wait_for_stanzas(Alice, 2),
@@ -2495,6 +2519,18 @@ exit_room_with_status(Config) ->
 		is_exit_message_with_status_correct(Alice, <<"owner">>, ?config(room, Config), Status,  Message),
 		is_exit_message_with_status_correct(Alice, <<"owner">>, ?config(room, Config), Status, escalus:wait_for_stanza(Bob)),
 		is_exit_message_with_status_correct(Alice, <<"owner">>, ?config(room, Config), Status, escalus:wait_for_stanza(Eve))
+    end).
+
+groupchat_user_enter_and_exit(Config) ->
+    escalus:story(Config, [1], fun(Alice) ->
+        Room = ?config(room, Config),
+        Nick = escalus_utils:get_username(Alice),
+        escalus:send(Alice, stanza_muc_enter_room(Room, Nick)),
+		escalus:wait_for_stanzas(Alice, 2),
+		escalus:send(Alice, stanza_to_room(escalus_stanza:presence(<<"unavailable">>), Room, Nick)),
+		Message = escalus:wait_for_stanza(Alice),
+		has_status_codes(Message, [<<"110">>]),
+        assert_empty_room(Config)
     end).
 
 %%-------------------------------------------------------------------
@@ -4192,3 +4228,14 @@ is_room_locked(Stanza) ->
     escalus_pred:is_presence(Stanza)
     andalso
     escalus_pred:is_error(<<"cancel">>, <<"item-not-found">>, Stanza).
+
+assert_empty_room(Config) when is_list(Config) ->
+    assert_empty_room(?MUC_HOST, ?config(room, Config)).
+
+assert_empty_room(Host, Room) when is_binary(Host), is_binary(Room) ->
+    RoomJID = escalus_ejabberd:rpc(jlib, make_jid, [Room, Host, <<>>]),
+    case escalus_ejabberd:rpc(mod_muc_room, get_room_users, [RoomJID]) of
+        {ok, Users} -> ?assert_equal([], Users);
+        %% It is compatible with old versions (without this function).
+        Res -> ct:pal("A call to mod_muc_room:get_room_users/1 failed. It returned ~p.", [Res])
+    end.
