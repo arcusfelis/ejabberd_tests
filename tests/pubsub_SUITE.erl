@@ -21,20 +21,17 @@
 %%%===================================================================
 
 all() ->
-    [{group, not_friend_tests},
-     {group, friend_tests}].
+    [{group, all_tests}].
 
-not_friend_tests() ->
+all_tests() ->
     [publish_case,
-     subscribe_not_authorized_case].
-
-friend_tests() ->
-    [subscribe_not_found_case,
-     subscribe_case].
+     subscribe_not_authorized_case,
+     subscribe_not_found_case,
+     subscribe_case,
+     subscribe_and_publish_case].
 
 groups() ->
-    [{not_friend_tests, [sequence], not_friend_tests()},
-     {friend_tests,     [sequence], friend_tests()}].
+    [{all_tests, [sequence], all_tests()}].
 
 suite() ->
     escalus:suite().
@@ -44,30 +41,48 @@ suite() ->
 %%%===================================================================
 
 init_per_suite(Config) ->
-    escalus:init_per_suite(Config).
+    escalus:create_users(escalus:init_per_suite(Config)).
 
 end_per_suite(Config) ->
-    escalus:end_per_suite(Config).
+    escalus:end_per_suite(escalus:delete_users(Config)).
 
-init_per_group(friend_tests, Config0) ->
-    Config1 = escalus:create_users(Config0),
-    Config2 = escalus:make_everyone_friends(Config1),
-    escalus_ejabberd:wait_for_session_count(Config2, 0),
-    Config2;
 init_per_group(_GroupName, Config) ->
-    escalus:create_users(Config).
+    Config.
 
 end_per_group(_GroupName, Config) ->
-    escalus:delete_users(Config),
     Config.
 
 init_per_testcase(CaseName, Config) ->
-    delete_offline_messages(Config),
-    escalus:init_per_testcase(CaseName, Config).
+    escalus:init_per_testcase(CaseName,
+        pre_init_per_testcase(CaseName, Config)).
+
+pre_init_per_testcase(publish_case, Config) ->
+    clean(presence_unsubscribe(Config));
+pre_init_per_testcase(subscribe_not_authorized_case, Config) ->
+    clean(presence_unsubscribe(Config));
+pre_init_per_testcase(subscribe_not_found_case, Config) ->
+    clean(presence_subscribe(presence_unsubscribe(Config)));
+pre_init_per_testcase(subscribe_case, Config) ->
+    clean(presence_subscribe(presence_unsubscribe(Config)));
+pre_init_per_testcase(subscribe_and_publish_case, Config) ->
+    clean(presence_subscribe(presence_unsubscribe(Config))).
 
 end_per_testcase(CaseName, Config) ->
-    delete_offline_messages(Config),
     escalus:end_per_testcase(CaseName, Config).
+
+clean(Config) ->
+    delete_pubsub_objects(Config),
+    delete_offline_messages(Config),
+    Config.
+
+presence_subscribe(Config0) ->
+    Config1 = escalus:make_everyone_friends(Config0),
+    escalus_ejabberd:wait_for_session_count(Config1, 0),
+    Config1.
+
+presence_unsubscribe(Config) ->
+    delete_rosters(Config),
+    Config.
 
 %%%===================================================================
 %%% pubsub test cases
@@ -103,6 +118,28 @@ subscribe_case(Config) ->
         escalus:assert(is_iq_result, SubResIQ)
     end).
 
+subscribe_and_publish_case(Config) ->
+    %% Alice sends a message to Bob, who is offline
+    escalus:story(Config, [1,1], fun(Alice, Bob) ->
+        Node     = <<"princely_musings">>,
+        AliceJID = escalus_utils:get_short_jid(Alice),
+        BobJID   = escalus_utils:get_short_jid(Bob),
+
+        %% Owner creates a node
+        escalus:send(Alice, create_node_iq(AliceJID, Node)),
+        escalus:assert(is_iq_result, escalus_client:wait_for_stanza(Alice)),
+
+        %% Listener subscribe to node
+        escalus:send(Bob, subscribe_iq(AliceJID, Node, BobJID)),
+        escalus:assert(is_iq_result, escalus_client:wait_for_stanza(Bob)),
+
+        escalus:send(Alice, publish_soliloquy_entry_iq()),
+        escalus:assert(is_iq_result, escalus_client:wait_for_stanza(Alice)),
+
+        Event = escalus_client:wait_for_stanza(Bob, 5000),
+        ct:pal("Event ~p", [Event])
+    end).
+
 %% Example 45. Node does not exist
 subscribe_not_found_case(Config) ->
     %% Alice sends a message to Bob, who is offline
@@ -122,6 +159,10 @@ subscribe_not_authorized_case(Config) ->
         Node     = <<"princely_musings">>,
         AliceJID = escalus_utils:get_short_jid(Alice),
         BobJID   = escalus_utils:get_short_jid(Bob),
+        %% Owner creates a node
+        escalus:send(Alice, create_node_iq(AliceJID, Node)),
+        escalus:assert(is_iq_result, escalus_client:wait_for_stanza(Alice)),
+        %% Listener subscribe to node
         escalus:send(Bob, subscribe_iq(AliceJID, Node, BobJID)),
         ErrorIQ = escalus_client:wait_for_stanza(Bob),
         escalus:assert(is_error, [<<"auth">>, <<"not-authorized">>], ErrorIQ)
@@ -225,13 +266,35 @@ subscribe_subscribe(Node, SubscribedJID) ->
 
 delete_offline_messages(Config) ->
     SUs = serv_users(Config),
-    %% It is not the best place to delete these messages.
-    [delete_offline_messages(S, U) || {S, U} <- SUs],
+    [delete_offline_messages(U, S) || {S, U} <- SUs],
+    ok.
+
+delete_pubsub_objects(Config) ->
+    SUs = serv_users(Config),
+    [delete_pubsub_objects(U, S) || {S, U} <- SUs],
+    ok.
+
+delete_rosters(Config) ->
+    SUs = serv_users(Config),
+    [delete_rosters(U, S) || {S, U} <- SUs],
     ok.
 
 delete_offline_messages(Username, Server) ->
-    catch escalus_ejabberd:rpc(mod_offline, remove_user, [Username, Server]),
+    remove_user(Username, Server, [mod_offline, mod_offline_odbc]).
+
+delete_pubsub_objects(Username, Server) ->
+    remove_user(Username, Server, [mod_pubsub, mod_pubsub_odbc]).
+
+delete_rosters(Username, Server) ->
+    remove_user(Username, Server, [mod_roster, mod_roster_odbc]).
+
+remove_user(Username, Server, Modules) ->
+    [(catch escalus_ejabberd:rpc(M, remove_user, [Username, Server]))
+     || M <- Modules, LM <- loaded_modules(Server), M =:= LM],
     ok.
+
+loaded_modules(Server) ->
+    escalus_ejabberd:rpc(gen_mod, loaded_modules, [Server]).
 
 serv_users(Config) ->
     [serv_user(Config, UserSpec)
