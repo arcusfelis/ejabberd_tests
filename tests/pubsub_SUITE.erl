@@ -15,6 +15,7 @@
 
 -define(NS_PUBSUB, <<"http://jabber.org/protocol/pubsub">>).
 -define(NS_ATOM,   <<"http://www.w3.org/2005/Atom">>).
+-define(NS_XDATA,  <<"jabber:x:data">>).
 -define(NS_PUBSUB_OWNER, <<"http://jabber.org/protocol/pubsub#owner">>).
 
 %%%===================================================================
@@ -32,6 +33,8 @@ all_tests() ->
      subscribe_and_publish_case,
      get_default_node_options_case,
 %    get_default_node_subscription_options_case, % TODO not supported
+     get_configure_node_case,
+     subscribe_and_publish_open_case
      ].
 
 groups() ->
@@ -67,6 +70,10 @@ pre_init_per_testcase(subscribe_not_authorized_case, Config) ->
 pre_init_per_testcase(get_default_node_options_case, Config) ->
     clean(presence_unsubscribe(Config));
 pre_init_per_testcase(get_default_node_subscription_options_case, Config) ->
+    clean(presence_unsubscribe(Config));
+pre_init_per_testcase(get_configure_node_case, Config) ->
+    clean(presence_unsubscribe(Config));
+pre_init_per_testcase(subscribe_and_publish_open_case, Config) ->
     clean(presence_unsubscribe(Config));
 pre_init_per_testcase(subscribe_not_found_case, Config) ->
     clean(presence_subscribe(presence_unsubscribe(Config)));
@@ -107,6 +114,8 @@ publish_case(Config) ->
 %% Example 124. Request to create a node
 %% Example 131. Service replies with success and generated NodeID
 %% Example 32. Entity subscribes to a node
+%% pubsub#access_model does not matter.
+%% Subscriber has access to the node.
 subscribe_case(Config) ->
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
         Node     = <<"princely_musings">>,
@@ -124,7 +133,32 @@ subscribe_case(Config) ->
         escalus:assert(is_iq_result, SubResIQ)
     end).
 
+%% pubsub#access_model is presence.
+%% Subscriber has access to the node.
 subscribe_and_publish_case(Config) ->
+    escalus:story(Config, [1,1], fun(Alice, Bob) ->
+        Node     = <<"princely_musings">>,
+        AliceJID = escalus_utils:get_short_jid(Alice),
+        BobJID   = escalus_utils:get_short_jid(Bob),
+
+        %% Owner creates a node
+        escalus:send(Alice, create_node_with_custom_access_model_iq(AliceJID, Node, <<"presence">>)),
+        escalus:assert(is_iq_result, escalus_client:wait_for_stanza(Alice)),
+
+        %% Listener subscribe to node
+        escalus:send(Bob, subscribe_iq(AliceJID, Node, BobJID)),
+        escalus:assert(is_iq_result, escalus_client:wait_for_stanza(Bob)),
+
+        escalus:send(Alice, publish_soliloquy_entry_iq()),
+        escalus:assert(is_iq_result, escalus_client:wait_for_stanza(Alice)),
+
+        Event = escalus_client:wait_for_stanza(Bob, 500),
+        escalus:assert(is_message, Event)
+    end).
+
+%% pubsub#access_model is open.
+%% Subscriber has access to the node.
+subscribe_and_publish_open_case(Config) ->
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
         Node     = <<"princely_musings">>,
         AliceJID = escalus_utils:get_short_jid(Alice),
@@ -146,6 +180,8 @@ subscribe_and_publish_case(Config) ->
     end).
 
 %% Example 45. Node does not exist
+%% pubsub#access_model does not matter.
+%% Subscriber has access to the node.
 subscribe_not_found_case(Config) ->
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
         Node     = <<"princely_musings">>,
@@ -157,13 +193,15 @@ subscribe_not_found_case(Config) ->
     end).
 
 %% Example 92. Entity is not authorized to retrieve items (presence subscription required)
+%% pubsub#access_model is presence.
+%% Subscriber has no access to the node.
 subscribe_not_authorized_case(Config) ->
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
         Node     = <<"princely_musings">>,
         AliceJID = escalus_utils:get_short_jid(Alice),
         BobJID   = escalus_utils:get_short_jid(Bob),
         %% Owner creates a node
-        escalus:send(Alice, create_node_iq(AliceJID, Node)),
+        escalus:send(Alice, create_node_with_custom_access_model_iq(AliceJID, Node, <<"presence">>)),
         escalus:assert(is_iq_result, escalus_client:wait_for_stanza(Alice)),
         %% Listener subscribe to node
         escalus:send(Bob, subscribe_iq(AliceJID, Node, BobJID)),
@@ -195,6 +233,22 @@ get_default_node_subscription_options_case(Config) ->
         ct:pal("ResultIQ ~p", [ResultIQ]),
         escalus:assert(is_iq_result, ResultIQ)
     end).
+
+%% Example 138. Owner requests configuration form
+get_configure_node_case(Config) ->
+    escalus:story(Config, [1], fun(Alice) ->
+        Node     = <<"princely_musings">>,
+        AliceJID = escalus_utils:get_short_jid(Alice),
+        %% Owner creates a node
+        escalus:send(Alice, create_node_iq(AliceJID, Node)),
+        escalus:assert(is_iq_result, escalus_client:wait_for_stanza(Alice)),
+        %% Owner request options
+        escalus:send(Alice, get_configuration_form_iq(Node)),
+        ResultIQ = escalus_client:wait_for_stanza(Alice),
+        ct:pal("ResultIQ ~p", [ResultIQ]),
+        escalus:assert(is_iq_result, ResultIQ)
+    end).
+
 
 %%%===================================================================
 %%% helpers
@@ -275,6 +329,44 @@ create_node_create(Node) ->
         name = <<"create">>,
         attrs = [{<<"node">>, Node}]}.
 
+create_node_with_custom_access_model_iq(ToJID, Node, AccessModel) ->
+    escalus_stanza:iq(ToJID, <<"set">>,
+        [create_node_with_custom_access_model_body(Node, AccessModel)]).
+
+create_node_with_custom_access_model_body(Node, AccessModel) ->
+    Create = create_node_create(Node),
+    Configure = custom_access_model_configure(AccessModel),
+    #xmlel{
+        name = <<"pubsub">>,
+        attrs = [{<<"xmlns">>, ?NS_PUBSUB}],
+        children = [Create, Configure]}.
+
+custom_access_model_configure(AccessModel) ->
+    #xmlel{
+        name = <<"configure">>,
+        children = [custom_access_model_configure_x(AccessModel)]}.
+
+custom_access_model_configure_x(AccessModel) ->
+    #xmlel{
+        name = <<"x">>,
+        attrs = [{<<"xmlns">>, ?NS_XDATA}, {<<"type">>, <<"submit">>}],
+        children = [
+            form_type_field(<<"http://jabber.org/protocol/pubsub#node_config">>),
+            form_field(<<"pubsub#access_model">>, AccessModel)]}.
+
+form_field(FieldName, Value) ->
+    #xmlel{
+        name = <<"field">>,
+        attrs = [{<<"var">>, FieldName}],
+        children = [xmlel(<<"value">>, Value)]}.
+
+form_type_field(Value) ->
+    #xmlel{
+        name = <<"field">>,
+        attrs = [{<<"var">>, <<"FORM_TYPE">>}, {<<"type">>, <<"hidden">>}],
+        children = [xmlel(<<"value">>, Value)]}.
+
+
 subscribe_iq(ToJID, Node, SubscribedJID) ->
     Body = subscribe_body(Node, SubscribedJID),
     escalus_stanza:iq(ToJID, <<"set">>, [Body]).
@@ -306,6 +398,16 @@ get_default_node_subscription_options_body(Node) ->
     #xmlel{
         name = <<"pubsub">>,
         attrs = [{<<"xmlns">>, ?NS_PUBSUB}],
+        children = [#xmlel{name = <<"default">>,
+                           attrs = [{<<"node">>, Node}]}]}.
+
+get_configuration_form_iq(Node) ->
+    escalus_stanza:iq(<<"get">>, [get_configuration_form_body(Node)]).
+
+get_configuration_form_body(Node) ->
+    #xmlel{
+        name = <<"pubsub">>,
+        attrs = [{<<"xmlns">>, ?NS_PUBSUB_OWNER}],
         children = [#xmlel{name = <<"default">>,
                            attrs = [{<<"node">>, Node}]}]}.
 
