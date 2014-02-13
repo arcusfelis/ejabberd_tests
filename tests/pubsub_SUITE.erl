@@ -98,7 +98,6 @@ presence_unsubscribe(Config) ->
 
 %% Example 1. Publisher Publishes a New Weblog Entry
 publish_case(Config) ->
-    %% Alice sends a message to Bob, who is offline
     escalus:story(Config, [1], fun(Alice) ->
         escalus:send(Alice, publish_soliloquy_entry_iq()),
         ResultIQ = escalus_client:wait_for_stanza(Alice),
@@ -109,7 +108,6 @@ publish_case(Config) ->
 %% Example 131. Service replies with success and generated NodeID
 %% Example 32. Entity subscribes to a node
 subscribe_case(Config) ->
-    %% Alice sends a message to Bob, who is offline
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
         Node     = <<"princely_musings">>,
         AliceJID = escalus_utils:get_short_jid(Alice),
@@ -127,7 +125,6 @@ subscribe_case(Config) ->
     end).
 
 subscribe_and_publish_case(Config) ->
-    %% Alice sends a message to Bob, who is offline
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
         Node     = <<"princely_musings">>,
         AliceJID = escalus_utils:get_short_jid(Alice),
@@ -150,7 +147,6 @@ subscribe_and_publish_case(Config) ->
 
 %% Example 45. Node does not exist
 subscribe_not_found_case(Config) ->
-    %% Alice sends a message to Bob, who is offline
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
         Node     = <<"princely_musings">>,
         AliceJID = escalus_utils:get_short_jid(Alice),
@@ -162,7 +158,6 @@ subscribe_not_found_case(Config) ->
 
 %% Example 92. Entity is not authorized to retrieve items (presence subscription required)
 subscribe_not_authorized_case(Config) ->
-    %% Alice sends a message to Bob, who is offline
     escalus:story(Config, [1,1], fun(Alice, Bob) ->
         Node     = <<"princely_musings">>,
         AliceJID = escalus_utils:get_short_jid(Alice),
@@ -179,7 +174,6 @@ subscribe_not_authorized_case(Config) ->
 
 %% Example 151. Entity requests default node configuration options
 get_default_node_options_case(Config) ->
-    %% Alice sends a message to Bob, who is offline
     escalus:story(Config, [1], fun(Alice) ->
         escalus:send(Alice, get_default_node_options_iq()),
         ResultIQ = escalus_client:wait_for_stanza(Alice),
