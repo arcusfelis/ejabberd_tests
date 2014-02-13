@@ -15,6 +15,7 @@
 
 -define(NS_PUBSUB, <<"http://jabber.org/protocol/pubsub">>).
 -define(NS_ATOM,   <<"http://www.w3.org/2005/Atom">>).
+-define(NS_PUBSUB_OWNER, <<"http://jabber.org/protocol/pubsub#owner">>).
 
 %%%===================================================================
 %%% Suite configuration
@@ -28,7 +29,8 @@ all_tests() ->
      subscribe_not_authorized_case,
      subscribe_not_found_case,
      subscribe_case,
-     subscribe_and_publish_case].
+     subscribe_and_publish_case,
+     get_default_node_options_case].
 
 groups() ->
     [{all_tests, [sequence], all_tests()}].
@@ -59,6 +61,8 @@ init_per_testcase(CaseName, Config) ->
 pre_init_per_testcase(publish_case, Config) ->
     clean(presence_unsubscribe(Config));
 pre_init_per_testcase(subscribe_not_authorized_case, Config) ->
+    clean(presence_unsubscribe(Config));
+pre_init_per_testcase(get_default_node_options_case, Config) ->
     clean(presence_unsubscribe(Config));
 pre_init_per_testcase(subscribe_not_found_case, Config) ->
     clean(presence_subscribe(presence_unsubscribe(Config)));
@@ -169,6 +173,16 @@ subscribe_not_authorized_case(Config) ->
 %       escalus:assert(is_error, [<<"auth">>, <<"presence-subscription-required">>], ErrorIQ)
     end).
 
+%% Example 151. Entity requests default node configuration options
+get_default_node_options_case(Config) ->
+    %% Alice sends a message to Bob, who is offline
+    escalus:story(Config, [1], fun(Alice) ->
+        escalus:send(Alice, get_default_node_options_iq()),
+        ResultIQ = escalus_client:wait_for_stanza(Alice),
+        ct:pal("ResultIQ ~p", [ResultIQ]),
+        escalus:assert(is_iq_result, ResultIQ)
+    end).
+
 
 %%%===================================================================
 %%% helpers
@@ -263,6 +277,15 @@ subscribe_subscribe(Node, SubscribedJID) ->
     #xmlel{
         name = <<"subscribe">>,
         attrs = [{<<"node">>, Node}, {<<"jid">>, SubscribedJID}]}.
+
+get_default_node_options_iq() ->
+    escalus_stanza:iq(<<"get">>, [get_default_node_options_body()]).
+
+get_default_node_options_body() ->
+    #xmlel{
+        name = <<"pubsub">>,
+        attrs = [{<<"xmlns">>, ?NS_PUBSUB_OWNER}],
+        children = [#xmlel{name = <<"default">>}]}.
 
 delete_offline_messages(Config) ->
     SUs = serv_users(Config),
