@@ -136,8 +136,8 @@ subscribe_and_publish_case(Config) ->
         escalus:send(Alice, publish_soliloquy_entry_iq()),
         escalus:assert(is_iq_result, escalus_client:wait_for_stanza(Alice)),
 
-        Event = escalus_client:wait_for_stanza(Bob, 5000),
-        ct:pal("Event ~p", [Event])
+        Event = escalus_client:wait_for_stanza(Bob, 500),
+        escalus:assert(is_message, Event)
     end).
 
 %% Example 45. Node does not exist
