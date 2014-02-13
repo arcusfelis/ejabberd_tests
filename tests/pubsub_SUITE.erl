@@ -30,7 +30,9 @@ all_tests() ->
      subscribe_not_found_case,
      subscribe_case,
      subscribe_and_publish_case,
-     get_default_node_options_case].
+     get_default_node_options_case,
+%    get_default_node_subscription_options_case, % TODO not supported
+     ].
 
 groups() ->
     [{all_tests, [sequence], all_tests()}].
@@ -63,6 +65,8 @@ pre_init_per_testcase(publish_case, Config) ->
 pre_init_per_testcase(subscribe_not_authorized_case, Config) ->
     clean(presence_unsubscribe(Config));
 pre_init_per_testcase(get_default_node_options_case, Config) ->
+    clean(presence_unsubscribe(Config));
+pre_init_per_testcase(get_default_node_subscription_options_case, Config) ->
     clean(presence_unsubscribe(Config));
 pre_init_per_testcase(subscribe_not_found_case, Config) ->
     clean(presence_subscribe(presence_unsubscribe(Config)));
@@ -183,6 +187,20 @@ get_default_node_options_case(Config) ->
         escalus:assert(is_iq_result, ResultIQ)
     end).
 
+%% Example 73. Entity requests default subscription configuration options
+get_default_node_subscription_options_case(Config) ->
+    escalus:story(Config, [1], fun(Alice) ->
+        Node     = <<"princely_musings">>,
+        AliceJID = escalus_utils:get_short_jid(Alice),
+        %% Owner creates a node
+        escalus:send(Alice, create_node_iq(AliceJID, Node)),
+        escalus:assert(is_iq_result, escalus_client:wait_for_stanza(Alice)),
+        %% Somebody request options
+        escalus:send(Alice, get_default_node_subscription_options_iq(Node)),
+        ResultIQ = escalus_client:wait_for_stanza(Alice),
+        ct:pal("ResultIQ ~p", [ResultIQ]),
+        escalus:assert(is_iq_result, ResultIQ)
+    end).
 
 %%%===================================================================
 %%% helpers
@@ -286,6 +304,16 @@ get_default_node_options_body() ->
         name = <<"pubsub">>,
         attrs = [{<<"xmlns">>, ?NS_PUBSUB_OWNER}],
         children = [#xmlel{name = <<"default">>}]}.
+
+get_default_node_subscription_options_iq(Node) ->
+    escalus_stanza:iq(<<"get">>, [get_default_node_subscription_options_body(Node)]).
+
+get_default_node_subscription_options_body(Node) ->
+    #xmlel{
+        name = <<"pubsub">>,
+        attrs = [{<<"xmlns">>, ?NS_PUBSUB}],
+        children = [#xmlel{name = <<"default">>,
+                           attrs = [{<<"node">>, Node}]}]}.
 
 delete_offline_messages(Config) ->
     SUs = serv_users(Config),
