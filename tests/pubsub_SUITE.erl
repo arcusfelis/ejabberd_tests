@@ -18,6 +18,12 @@
 -define(NS_XDATA,  <<"jabber:x:data">>).
 -define(NS_PUBSUB_OWNER, <<"http://jabber.org/protocol/pubsub#owner">>).
 
+-define(assert_equal(E, V), (
+    [ct:fail("assert_equal( ~p, ~p) failed~n\tExpected ~p~n\tValue ~p~n",
+             [??E, ??V, (E), (V)]) 
+     || (E) =/= (V)]
+    )).
+
 %%%===================================================================
 %%% Suite configuration
 %%%===================================================================
@@ -240,15 +246,17 @@ get_configure_node_case(Config) ->
         Node     = <<"princely_musings">>,
         AliceJID = escalus_utils:get_short_jid(Alice),
         %% Owner creates a node
-        escalus:send(Alice, create_node_iq(AliceJID, Node)),
+        escalus:send(Alice, create_node_with_custom_access_model_iq(AliceJID, Node, <<"presence">>)),
         escalus:assert(is_iq_result, escalus_client:wait_for_stanza(Alice)),
         %% Owner request options
         escalus:send(Alice, get_configuration_form_iq(Node)),
         ResultIQ = escalus_client:wait_for_stanza(Alice),
         ct:pal("ResultIQ ~p", [ResultIQ]),
-        escalus:assert(is_iq_result, ResultIQ)
+        escalus:assert(is_iq_result, ResultIQ),
+        Form = parse_form(ResultIQ),
+        AccessModel = find_form_field_value(<<"pubsub#access_model">>, Form), 
+        ?assert_equal(<<"presence">>, AccessModel)
     end).
-
 
 %%%===================================================================
 %%% helpers
@@ -410,6 +418,30 @@ get_configuration_form_body(Node) ->
         attrs = [{<<"xmlns">>, ?NS_PUBSUB_OWNER}],
         children = [#xmlel{name = <<"default">>,
                            attrs = [{<<"node">>, Node}]}]}.
+
+parse_form(ResultIQ=#xmlel{name = <<"iq">>}) ->
+    exml_query:path(ResultIQ, [
+        {element, <<"pubsub">>},
+        {element, <<"default">>},
+        {element, <<"x">>}]).
+
+find_form_field_value(FieldName, Form) ->
+    Field = find_form_field(FieldName, Form),
+    parse_form_field_value(Field).
+
+find_form_field(FieldName, #xmlel{name = <<"x">>, children = FieldElems}) ->
+    find_form_field_cycle(FieldName, FieldElems).
+
+find_form_field_cycle(FieldName, [#xmlel{name = <<"field">>}=FieldElem|FieldElems]) ->
+    case exml_query:attr(FieldElem, <<"var">>) of
+        FieldName ->
+            FieldElem;
+        _ ->
+            find_form_field_cycle(FieldName, FieldElems)
+    end.
+
+parse_form_field_value(Field) ->
+    exml_query:path(Field, [{element, <<"value">>}, cdata]).
 
 delete_offline_messages(Config) ->
     SUs = serv_users(Config),
