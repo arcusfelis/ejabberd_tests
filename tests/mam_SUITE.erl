@@ -61,7 +61,8 @@
          querying_for_all_messages_with_jid/1,
          muc_querying_for_all_messages/1,
          muc_querying_for_all_messages_with_jid/1,
-         iq_spoofing/1]).
+         iq_spoofing/1,
+         block_jid_message/1]).
 
 -include_lib("escalus/include/escalus.hrl").
 -include_lib("escalus/include/escalus_xmlns.hrl").
@@ -146,6 +147,7 @@ configurations() ->
 
 basic_group_names() ->
     [
+    privacy,
     mam,
     mam_purge,
     muc,
@@ -201,7 +203,8 @@ basic_groups() ->
      {muc_with_pm,      [], muc_cases()},
      {rsm,              [], rsm_cases()},
      {muc_rsm,          [], muc_rsm_cases()},
-     {with_rsm,         [], with_rsm_cases()}].
+     {with_rsm,         [], with_rsm_cases()},
+     {privacy,          [], privacy_cases()}].
 
 bootstrapped_cases() ->
      [purge_old_single_message,
@@ -230,6 +233,9 @@ policy_violation_cases() ->
 
 offline_message_cases() ->
     [offline_message].
+
+privacy_cases() ->
+    [block_jid_message].
 
 muc_cases() ->
     [muc_service_discovery,
@@ -289,13 +295,38 @@ init_per_group(Group, Config) ->
     ct:pal("Init per group ~p; configuration ~p; basic group ~p",
            [Group, C, B]),
     Config1 = init_modules(C, B, Config),
-    init_state(C, B, Config1).
+    Config2 = init_modules_extra(C, B, Config1),
+    init_state(C, B, Config2).
     
 end_per_group(Group, Config) ->
     C = configuration(Group),
     B = basic_group(Group),
     Config1 = end_state(C, B, Config),
-    end_modules(C, B, Config1).
+    Config2 = end_modules_extra(C, B, Config1),
+    Config3 = end_modules(C, B, Config2),
+    end_modules(C, B, Config3).
+
+init_modules_extra(C, privacy, Config) ->
+    case is_loaded_module(host(), mod_privacy_filter) of
+        true ->
+            [{mod_privacy_filter_already_started, true}|Config];
+        false ->
+            ok = start_module(host(), mod_privacy_filter, []),
+            Config
+    end;
+    
+init_modules_extra(_, _, Config) ->
+    Config.
+end_modules_extra(_, privacy, Config) ->
+    case lists:keytake(mod_privacy_filter_already_started, 1, Config) of
+        {value, {mod_privacy_filter_already_started, true}, Config1} ->
+            stop_module(host(), mod_privacy_filter),
+            Config1;
+        false ->
+            Config
+    end;
+end_modules_extra(_, _, Config) ->
+    Config.
 
 init_modules(C, muc_rsm, Config) ->
     init_modules(C, muc, Config);
@@ -1438,6 +1469,33 @@ iq_spoofing(Config) ->
         ok
         end,
     escalus:story(Config, [1,1], F).
+
+block_jid_message(Config) ->
+    F = fun(Alice, Bob) ->
+
+        %% Alice should receive message
+        escalus_client:send(Bob,
+            escalus_stanza:chat_to(Alice, <<"Hi! What's your name?">>)),
+        escalus_assert:is_chat_message(<<"Hi! What's your name?">>,
+            escalus_client:wait_for_stanza(Alice)),
+
+        %% set the list on server and make it active
+        privacy_helper:set_and_activate(Alice, <<"deny_bob_message">>),
+
+        %% Alice should NOT receive message
+        escalus_client:send(Bob, escalus_stanza:chat_to(Alice, <<"Hi, Alice!">>)),
+        timer:sleep(50),
+        escalus_assert:has_no_stanzas(Alice),
+
+        escalus:send(Bob, stanza_archive_request(<<"bob_not_filtered_q">>)),
+        assert_respond_size(2, wait_archive_respond_iq_first(Bob)),
+
+        escalus:send(Alice, stanza_archive_request(<<"alice_filtered_q">>)),
+        assert_respond_size(1, wait_archive_respond_iq_first(Alice)),
+        ok
+        end,
+    escalus:story(Config, [1, 1], F).
+
 
 result_iq() ->
     #xmlel{
