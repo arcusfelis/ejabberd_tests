@@ -26,6 +26,7 @@
 
 all() ->
     [{group, presence},
+     {group, presence_friends},
      {group, presence_priority},
      {group, roster},
      {group, subscribe_group}].
@@ -35,6 +36,8 @@ groups() ->
                              available_direct,
                              additions,
                              invisible_presence]},
+     {presence_friends, [sequence], [unavailable_multi,
+                                     become_available_again]},
      {presence_priority, [sequence], [negative_priority_presence]},
      {roster, [sequence], [get_roster,
                            add_contact,
@@ -58,6 +61,10 @@ init_per_suite(Config) ->
 end_per_suite(Config) ->
     escalus:end_per_suite(Config).
 
+
+init_per_group(presence_friends, Config) ->
+    Config1 = escalus:create_users(Config, {by_name, [alice, bob]}),
+    escalus:make_everyone_friends(Config1);
 init_per_group(_GroupName, Config) ->
     escalus:create_users(Config, {by_name, [alice, bob]}).
 
@@ -93,7 +100,7 @@ end_rosters_remove(Config) ->
 %%--------------------------------------------------------------------
 
 available(Config) ->
-    escalus:story(Config, [1, 1], fun(Alice,_Bob) ->
+    escalus:story(Config, [1], fun(Alice) ->
 
         escalus:send(Alice, escalus_stanza:presence(<<"available">>)),
         escalus:assert(is_presence, escalus:wait_for_stanza(Alice))
@@ -110,6 +117,7 @@ available_direct(Config) ->
 
         end).
 
+%% @doc Put additional fields priority and status message into presence
 additions(Config) ->
     escalus:story(Config, [1, 1], fun(Alice,Bob) ->
 
@@ -149,10 +157,18 @@ negative_priority_presence(Config) ->
         %% Bob sends to the Alice's bare JID.
         escalus:send(Bob, escalus_stanza:chat_to_short_jid(Alice1, <<"Hi.">>)),
 
+        %% Message is delivered to resource with maximum priority.
+        Msg = escalus:wait_for_stanza(Alice2),
+        escalus:assert(is_chat_message, [<<"Hi.">>], Msg),
+
         %% If priority is negative, than the client does not want to receive
         %% any messages.
         timer:sleep(1000),
-        escalus_assert:has_no_stanzas(Alice1)
+
+        %% Check Alice2 and Bob too
+        escalus_assert:has_no_stanzas(Alice1),
+        escalus_assert:has_no_stanzas(Alice2),
+        escalus_assert:has_no_stanzas(Bob)
 
         end).
 
@@ -208,6 +224,79 @@ invisible_presence(Config) ->
         escalus:send(Bob, escalus_stanza:presence(<<"available">>)),
         escalus:assert(is_presence, escalus:wait_for_stanza(Alice))
 
+        end).
+
+%% Alice sends "unavailable" from both devices
+unavailable_multi(Config) ->
+    escalus:story(Config, [2, 1], fun(Alice1, Alice2, Bob) ->
+        %% First device becomes unavailable
+        escalus:send(Alice1, escalus_stanza:presence(<<"unavailable">>)),
+        %% Roster users and other devices receive a presence update
+        P1 = escalus:wait_for_stanza(Alice2),
+        P2 = escalus:wait_for_stanza(Bob),
+        escalus:assert(is_stanza_from, [Alice1], P1),
+        escalus:assert(is_stanza_from, [Alice1], P2),
+        escalus:assert(is_presence_with_type, [<<"unavailable">>], P1),
+        escalus:assert(is_presence_with_type, [<<"unavailable">>], P2),
+
+        timer:sleep(1000),
+        escalus_assert:has_no_stanzas(Alice1),
+        escalus_assert:has_no_stanzas(Alice2),
+        escalus_assert:has_no_stanzas(Bob),
+
+        %% Second device also becomes unavailable
+        escalus:send(Alice2, escalus_stanza:presence(<<"unavailable">>)),
+        P3 = escalus:wait_for_stanza(Bob),
+        escalus:assert(is_stanza_from, [Alice2], P3),
+        escalus:assert(is_presence_with_type, [<<"unavailable">>], P3),
+
+        timer:sleep(1000),
+        escalus_assert:has_no_stanzas(Alice1),
+        escalus_assert:has_no_stanzas(Alice2),
+        escalus_assert:has_no_stanzas(Bob)
+
+        end).
+
+become_available_again(Config) ->
+    escalus:story(Config, [2, 1], fun(Alice1, Alice2, Bob) ->
+        %% PREPARATION
+        %% Send unavailable, reproducing last state from unavailable_multi
+        escalus:send(Alice1, escalus_stanza:presence(<<"unavailable">>)),
+        escalus:wait_for_stanza(Alice2),
+        escalus:send(Alice2, escalus_stanza:presence(<<"unavailable">>)),
+        escalus:wait_for_stanza(Bob),
+        escalus:wait_for_stanza(Bob),
+
+        timer:sleep(1000),
+        escalus_assert:has_no_stanzas(Alice1),
+        escalus_assert:has_no_stanzas(Alice2),
+        escalus_assert:has_no_stanzas(Bob),
+
+        %% MAIN PART
+        %% Becomes available again
+        escalus:send(Alice1, escalus_stanza:presence(<<"available">>)),
+
+        %% Alice receives her presence
+        %% Alice receives roster presences (with delay element)
+        %% The order of presences is random
+        P1 = escalus:wait_for_stanza(Alice1),
+        P2 = escalus:wait_for_stanza(Alice1),
+        escalus:assert(is_stanza_from, [Alice1], P1),
+        escalus:assert(is_presence_with_type, [<<"available">>], P1),
+        escalus:assert(is_presence_with_type, [<<"available">>], P2),
+        %% Check, than there are 2 stanzas: one from Alice1, another from Bob
+        escalus:assert_many([is_stanza_from_fn(Alice1),
+                             is_stanza_from_fn(Bob)], [P1, P2]),
+
+        %% Bob receives Alice's presence update
+        P3 = escalus:wait_for_stanza(Bob),
+        escalus:assert(is_stanza_from, [Alice1], P3),
+        escalus:assert(is_presence_with_type, [<<"available">>], P3),
+
+        timer:sleep(1000),
+        escalus_assert:has_no_stanzas(Alice1),
+        escalus_assert:has_no_stanzas(Alice2),
+        escalus_assert:has_no_stanzas(Bob)
         end).
 
 get_roster(Config) ->
@@ -523,4 +612,9 @@ remove_roster(Config, UserSpec) ->
                 false ->
                     throw(roster_not_loaded)
             end
+    end.
+
+is_stanza_from_fn(From) ->
+    fun(S) ->
+        escalus_pred:is_stanza_from(From, S)
     end.
