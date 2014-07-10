@@ -57,6 +57,8 @@ management_test_cases() ->
 
 blocking_test_cases() ->
     [block_jid_message,
+    block_jid_message_bare,
+    block_jid_message_bare_multi,
     block_group_message,
     block_subscription_message,
     block_all_message,
@@ -368,6 +370,46 @@ block_jid_message(Config) ->
         escalus_client:send(Bob, escalus_stanza:chat_to(Alice, <<"Hi, Alice!">>)),
         timer:sleep(?SLEEP_TIME),
         escalus_assert:has_no_stanzas(Alice)
+
+        end).
+
+block_jid_message_bare(Config) ->
+    escalus:story(Config, [1, 1], fun(Alice, Bob) ->
+
+        %% Alice should receive message
+        escalus_client:send(Bob,
+            escalus_stanza:chat_to(Alice, <<"Hi! What's your name?">>)),
+        escalus_assert:is_chat_message(<<"Hi! What's your name?">>,
+            escalus_client:wait_for_stanza(Alice)),
+
+        %% set the list on server and make it active
+        privacy_helper:set_and_activate(Alice, <<"deny_bob_message">>),
+
+        %% Alice should NOT receive message
+        escalus_client:send(Bob, escalus_stanza:chat_to_short_jid(Alice, <<"Hi, Alice!">>)),
+        timer:sleep(?SLEEP_TIME),
+        escalus_assert:has_no_stanzas(Alice)
+
+        end).
+
+block_jid_message_bare_multi(Config) ->
+    escalus:story(Config, [2, 1], fun(Alice, Alice2, Bob) ->
+
+        %% Alice should receive message
+        escalus_client:send(Bob,
+            escalus_stanza:chat_to(Alice, <<"Hi! What's your name?">>)),
+        escalus_assert:is_chat_message(<<"Hi! What's your name?">>,
+            escalus_client:wait_for_stanza(Alice)),
+
+        %% set the list on server and make it active
+        privacy_helper:set_and_activate(Alice, <<"deny_bob_message">>, [Alice2]),
+        privacy_helper:set_and_activate(Alice2, <<"deny_bob_message">>, [Alice]),
+
+        %% Alice should NOT receive message
+        escalus_client:send(Bob, escalus_stanza:chat_to_short_jid(Alice, <<"Hi, Alice!">>)),
+        timer:sleep(?SLEEP_TIME),
+        escalus_assert:has_no_stanzas(Alice),
+        escalus_assert:has_no_stanzas(Alice2)
 
         end).
 

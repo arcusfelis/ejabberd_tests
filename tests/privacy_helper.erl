@@ -8,10 +8,12 @@
 -import(escalus_compat, [bin/1]).
 
 -export([set_and_activate/2,
+         set_and_activate/3,
          set_list/2,
          send_set_list/2,
          activate_list/2,
          set_default_list/2,
+         decline_default_list/1,
          privacy_list/1,
          is_privacy_list_push/1,
          is_presence_error/1]).
@@ -19,6 +21,10 @@
 %% Sets the list on server and makes it the active one.
 set_and_activate(Client, ListName) ->
     set_list(Client, ListName),
+    activate_list(Client, ListName).
+
+set_and_activate(Client, ListName, OtherClients) ->
+    set_list(Client, ListName, OtherClients),
     activate_list(Client, ListName).
 
 send_set_list(Client, ListName) ->
@@ -30,6 +36,21 @@ set_list(Client, ListName) ->
     send_set_list(Client, ListName),
     Responses = escalus:wait_for_stanzas(Client, 2),
     escalus:assert_many([is_iq_result, is_privacy_set], Responses).
+    %% TODO Acknowledging receipt of privacy list pushes
+
+set_list(Client, ListName, OtherClients) ->
+    send_set_list(Client, ListName),
+    Responses = escalus:wait_for_stanzas(Client, 2),
+    escalus:assert_many([is_iq_result, is_privacy_set], Responses),
+    assert_pushed_to_other_online_devices(OtherClients),
+    ok.
+
+assert_pushed_to_other_online_devices([OtherClient|OtherClients]) ->
+    S = escalus:wait_for_stanza(OtherClient),
+    escalus:assert(is_privacy_set, S);
+    %% TODO Acknowledging receipt of privacy list pushes
+assert_pushed_to_other_online_devices([]) ->
+    ok.
 
 %% Make the list the active one.
 activate_list(Client, ListName) ->
@@ -39,6 +60,10 @@ activate_list(Client, ListName) ->
 %% Make the list the default one.
 set_default_list(Client, ListName) ->
     escalus:send(Client, escalus_stanza:privacy_set_default(ListName)),
+    escalus:assert(is_iq_result, escalus:wait_for_stanza(Client)).
+
+decline_default_list(Client) ->
+    escalus:send(Client, escalus_stanza:privacy_no_default()),
     escalus:assert(is_iq_result, escalus:wait_for_stanza(Client)).
 
 %% Is this iq a notification about a privacy list being changed?
