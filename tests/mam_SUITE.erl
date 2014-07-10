@@ -29,6 +29,8 @@
 -export([mam_service_discovery/1,
          muc_service_discovery/1,
          simple_archive_request/1,
+         simple_short_archive_request/1,
+         multiple_short_archive_request/1,
          muc_archive_request/1,
          muc_multiple_devices/1,
          muc_private_message/1,
@@ -213,6 +215,8 @@ bootstrapped_cases() ->
 mam_cases() ->
     [mam_service_discovery,
      simple_archive_request,
+     simple_short_archive_request,
+     multiple_short_archive_request,
      range_archive_request,
      range_archive_request_not_empty,
      limit_archive_request,
@@ -306,7 +310,7 @@ end_per_group(Group, Config) ->
     Config3 = end_modules(C, B, Config2),
     end_modules(C, B, Config3).
 
-init_modules_extra(C, privacy, Config) ->
+init_modules_extra(_, privacy, Config) ->
     case is_loaded_module(host(), mod_privacy_filter) of
         true ->
             [{mod_privacy_filter_already_started, true}|Config];
@@ -314,9 +318,9 @@ init_modules_extra(C, privacy, Config) ->
             ok = start_module(host(), mod_privacy_filter, []),
             Config
     end;
-    
 init_modules_extra(_, _, Config) ->
     Config.
+
 end_modules_extra(_, privacy, Config) ->
     case lists:keytake(mod_privacy_filter_already_started, 1, Config) of
         {value, {mod_privacy_filter_already_started, true}, Config1} ->
@@ -632,6 +636,10 @@ init_per_testcase(C=muc_private_message, Config) ->
 init_per_testcase(C=range_archive_request_not_empty, Config) ->
     escalus:init_per_testcase(C,
         bootstrap_archive_same_ids(clean_archives(Config)));
+init_per_testcase(C=simple_short_archive_request, Config) ->
+    escalus:init_per_testcase(C, clean_archives(Config));
+init_per_testcase(C=multiple_short_archive_request, Config) ->
+    escalus:init_per_testcase(C, clean_archives(Config));
 init_per_testcase(CaseName, Config) ->
     escalus:init_per_testcase(CaseName, Config).
 
@@ -749,11 +757,45 @@ simple_archive_request(Config) ->
         %%   {<<"type">>,<<"chat">>}],
         %%   [{xmlel,<<"body">>,[],[{xmlcdata,<<"OH, HAI!">>}]}]}
         escalus:send(Alice, escalus_stanza:chat_to(Bob, <<"OH, HAI!">>)),
+        escalus_assert:is_chat_message(<<"OH, HAI!">>,
+            escalus_client:wait_for_stanza(Bob)),
         escalus:send(Alice, stanza_archive_request(<<"q1">>)),
         assert_respond_size(1, wait_archive_respond_iq_first(Alice)),
         ok
         end,
     escalus:story(Config, [1, 1], F).
+
+simple_short_archive_request(Config) ->
+    F = fun(Alice, Bob) ->
+        %% Alice sends "Hello" to Bob's bare JID
+        %% {xmlel,<<"message">>,
+        %%  [{<<"from">>,<<"alice@localhost/res1">>},
+        %%   {<<"to">>,<<"bob@localhost">>},
+        %%   {<<"xml:lang">>,<<"en">>},
+        %%   {<<"type">>,<<"chat">>}],
+        %%   [{xmlel,<<"body">>,[],[{xmlcdata,<<"Hello">>}]}]}
+        escalus:send(Alice, escalus_stanza:chat_to_short_jid(Bob, <<"Hello">>)),
+        escalus_assert:is_chat_message(<<"Hello">>,
+            escalus_client:wait_for_stanza(Bob)),
+        escalus:send(Alice, stanza_archive_request(<<"q1">>)),
+        assert_respond_size(1, wait_archive_respond_iq_first(Alice)),
+        ok
+        end,
+    escalus:story(Config, [1, 1], F).
+
+multiple_short_archive_request(Config) ->
+    F = fun(Alice, Alice2, Bob) ->
+        %% Bob sends "Hey!" to Alice's bare JID
+        escalus:send(Bob, escalus_stanza:chat_to_short_jid(Alice, <<"Hey!">>)),
+        escalus_assert:is_chat_message(<<"Hey!">>,
+            escalus_client:wait_for_stanza(Alice2)),
+        escalus_assert:is_chat_message(<<"Hey!">>,
+            escalus_client:wait_for_stanza(Alice)),
+        escalus:send(Alice, stanza_archive_request(<<"q1">>)),
+        assert_respond_size(1, wait_archive_respond_iq_first(Alice)),
+        ok
+        end,
+    escalus:story(Config, [2, 1], F).
 
 querying_for_all_messages_with_jid(Config) ->
     F = fun(Alice) ->
@@ -1471,30 +1513,41 @@ iq_spoofing(Config) ->
     escalus:story(Config, [1,1], F).
 
 block_jid_message(Config) ->
-    F = fun(Alice, Bob) ->
+    F1 = fun(Alice) ->
+        privacy_helper:decline_default_list(Alice)
+        end,
+    F2 = fun(Alice, Alice2, Bob) ->
 
         %% Alice should receive message
         escalus_client:send(Bob,
-            escalus_stanza:chat_to(Alice, <<"Hi! What's your name?">>)),
+            escalus_stanza:chat_to_short_jid(Alice, <<"Hi! What's your name?">>)),
         escalus_assert:is_chat_message(<<"Hi! What's your name?">>,
             escalus_client:wait_for_stanza(Alice)),
+        escalus_assert:is_chat_message(<<"Hi! What's your name?">>,
+            escalus_client:wait_for_stanza(Alice2)),
 
         %% set the list on server and make it active
-        privacy_helper:set_and_activate(Alice, <<"deny_bob_message">>),
+        privacy_helper:set_default_list(Alice, <<"deny_bob_message">>),
 
         %% Alice should NOT receive message
-        escalus_client:send(Bob, escalus_stanza:chat_to(Alice, <<"Hi, Alice!">>)),
+        escalus_client:send(Bob, escalus_stanza:chat_to_short_jid(Alice, <<"Hi, Alice!">>)),
         timer:sleep(50),
         escalus_assert:has_no_stanzas(Alice),
+        escalus_assert:has_no_stanzas(Alice2),
 
         escalus:send(Bob, stanza_archive_request(<<"bob_not_filtered_q">>)),
         assert_respond_size(2, wait_archive_respond_iq_first(Bob)),
 
         escalus:send(Alice, stanza_archive_request(<<"alice_filtered_q">>)),
         assert_respond_size(1, wait_archive_respond_iq_first(Alice)),
+
+        escalus:send(Alice2, stanza_archive_request(<<"alice_filtered_q2">>)),
+        assert_respond_size(1, wait_archive_respond_iq_first(Alice2)),
         ok
         end,
-    escalus:story(Config, [1, 1], F).
+    escalus:story(Config, [1], F1),
+    escalus:story(Config, [2, 1], F2),
+    escalus:story(Config, [1], F1).
 
 
 result_iq() ->
