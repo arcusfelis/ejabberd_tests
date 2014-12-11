@@ -188,6 +188,7 @@ filter_tests(C, G, Tests) ->
 is_skipped(odbc_mnesia_muc_cache, muc)         -> false;
 is_skipped(odbc_mnesia_muc_cache, muc_with_pm) -> false;
 is_skipped(odbc_mnesia_muc_cache, muc_rsm)     -> false;
+is_skipped(odbc_mnesia_muc_cache, _)           -> true;
 is_skipped(C, _) -> is_configuration_skipped(C).
 
 is_test_skipped(ca, _, muc_querying_for_all_messages_with_jid) ->
@@ -306,14 +307,34 @@ init_per_group(Group, Config) ->
     B = basic_group(Group),
     ct:pal("Init per group ~p; configuration ~p; basic group ~p",
            [Group, C, B]),
-    Config1 = init_modules(C, B, Config),
-    init_state(C, B, Config1).
+    Config1 = try_init_modules(C, B, Config),
+    try_init_state(C, B, Config1).
     
 end_per_group(Group, Config) ->
     C = configuration(Group),
     B = basic_group(Group),
     Config1 = end_state(C, B, Config),
     end_modules(C, B, Config1).
+
+try_init_modules(C, B, Config) ->
+    try
+        init_modules(C, B, Config)
+    catch Class:Reason ->
+        Stacktrace = erlang:get_stacktrace(),
+        ct:pal("init_modules failed, configuration=~p, basic_group=~p, stacktrace=~p",
+               [C, B, Stacktrace]),
+        erlang:raise(Class, Reason, Stacktrace)
+    end.
+
+try_init_state(C, B, Config) ->
+    try
+        init_state(C, B, Config)
+    catch Class:Reason ->
+        Stacktrace = erlang:get_stacktrace(),
+        ct:pal("init_state failed, configuration=~p, basic_group=~p, stacktrace=~p",
+               [C, B, Stacktrace]),
+        erlang:raise(Class, Reason, Stacktrace)
+    end.
 
 init_modules(C, muc_rsm, Config) ->
     init_modules(C, muc, Config);
