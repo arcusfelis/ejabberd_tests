@@ -178,14 +178,28 @@ tests() ->
         not is_skipped(C, G)].
 
 groups() ->
-    [{full_group(C, G), Props, Tests}
+    [{full_group(C, G), Props, filter_tests(C, G, Tests)}
      || C <- configurations(), {G, Props, Tests} <- basic_groups(),
         not is_skipped(C, G)].
+
+filter_tests(C, G, Tests) ->
+    [Test || Test <- Tests, not is_test_skipped(C, G, Test)].
 
 is_skipped(odbc_mnesia_muc_cache, muc)         -> false;
 is_skipped(odbc_mnesia_muc_cache, muc_with_pm) -> false;
 is_skipped(odbc_mnesia_muc_cache, muc_rsm)     -> false;
 is_skipped(C, _) -> is_configuration_skipped(C).
+
+is_test_skipped(ca, _, muc_querying_for_all_messages_with_jid) ->
+    true; % with_jid_not_supported
+is_test_skipped(ca, _, querying_for_all_messages_with_jid) ->
+    true; % with_jid_not_supported
+is_test_skipped(ca, _, pagination_offset5_opt_count) ->
+    true; % offset_not_supported
+is_test_skipped(ca, _, pagination_offset5_opt_count_all) ->
+    true; % offset_not_supported
+is_test_skipped(_C, _G, _Test) ->
+    false.
 
 is_configuration_skipped(C) ->
     lists:member(C, skipped_configurations()).
