@@ -50,7 +50,7 @@ pre_end_per_suite(Suite,Config,State) ->
 
 %% @doc Called after end_per_suite. 
 post_end_per_suite(Suite,Config,Return,State) ->
-    {Return, fold_end(suite, Suite, State)}.
+    {Return, fold_end(suite, Suite, Return, State)}.
 
 %% @doc Called before each init_per_group.
 pre_init_per_group(Group,Config,State) ->
@@ -66,7 +66,7 @@ pre_end_per_group(Group,Config,State) ->
 
 %% @doc Called after each end_per_group. 
 post_end_per_group(Group,Config,Return,State) ->
-    {Return, fold_end(group, Group, State)}.
+    {Return, fold_end(group, Group, Return, State)}.
 
 %% @doc Called before each test case.
 pre_init_per_testcase(TC,Config,State) ->
@@ -74,7 +74,7 @@ pre_init_per_testcase(TC,Config,State) ->
 
 %% @doc Called after each test case.
 post_end_per_testcase(TC,Config,Return,State) ->
-    {Return, fold_end(test, TC, State)}.
+    {Return, fold_end(test, TC, Return, State)}.
 
 %% @doc Called after post_init_per_suite, post_end_per_suite, post_init_per_group,
 %% post_end_per_group and post_end_per_testcase if the suite, group or test case failed.
@@ -102,10 +102,17 @@ fold_start(Type, Name, State=#state{log_fd=FD}) ->
 
 %% Same as:
 %% echo -en "travis_fold:end:Name\\r"
-fold_end(Type, Name, State=#state{log_fd=FD}) ->
-    io:format(FD, "travis_fold:end:~s~p\r", [print_type(Type), Name]),
+fold_end(Type, Name, Return, State=#state{log_fd=FD}) ->
+    io:format(FD, "travis_fold:end:~s~p\r~s", [print_type(Type), Name, print_return(Return)]),
     State.
 
 print_type(suite) -> "s.";
 print_type(group) -> "g.";
 print_type(test)  -> "t.".
+
+print_return({skip, Reason}) ->
+    io_lib:format("Skipped ~p~n", [Reason]);
+print_return({fail, Reason}) ->
+    io_lib:format("Failed ~p~n", [Reason]);
+print_return(_) ->
+    "".
