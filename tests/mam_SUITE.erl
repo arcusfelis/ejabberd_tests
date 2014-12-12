@@ -189,16 +189,24 @@ is_skipped(odbc_mnesia_muc_cache, muc)         -> false;
 is_skipped(odbc_mnesia_muc_cache, muc_with_pm) -> false;
 is_skipped(odbc_mnesia_muc_cache, muc_rsm)     -> false;
 is_skipped(odbc_mnesia_muc_cache, _)           -> true;
+is_skipped(ca, rsm)                            ->
+    true; %% only with_rsm group supported, mod_mam_con_ca_arch missing_with_jid
 is_skipped(C, _) -> is_configuration_skipped(C).
 
-is_test_skipped(ca, _, muc_querying_for_all_messages_with_jid) ->
-    true; % with_jid_not_supported
-is_test_skipped(ca, _, querying_for_all_messages_with_jid) ->
-    true; % with_jid_not_supported
-is_test_skipped(ca, _, pagination_offset5_opt_count) ->
-    true; % offset_not_supported
-is_test_skipped(ca, _, pagination_offset5_opt_count_all) ->
-    true; % offset_not_supported
+is_test_skipped(ca, muc_rsm,        muc_querying_for_all_messages_with_jid) ->
+    true; % mod_mam_muc_ca_arch     with_jid_not_supported
+is_test_skipped(ca, rsm,            pagination_offset5_opt_count) ->
+    true; % mod_mam_con_ca_arch     offset_not_supported
+is_test_skipped(ca, with_rsm,       pagination_offset5_opt_count) ->
+    true; % mod_mam_con_ca_arch     offset_not_supported
+is_test_skipped(ca, muc_rsm,        pagination_offset5_opt_count) ->
+    true; % mod_mam_muc_ca_arch     offset_not_supported
+is_test_skipped(ca, rsm,            pagination_offset5_opt_count_all) ->
+    true; % mod_mam_con_ca_arch     offset_not_supported
+is_test_skipped(ca, with_rsm,       pagination_offset5_opt_count_all) ->
+    true; % mod_mam_con_ca_arch     offset_not_supported
+is_test_skipped(ca, muc_rsm,        pagination_offset5_opt_count_all) ->
+    true; % mod_mam_muc_ca_arch     offset_not_supported
 is_test_skipped(_C, _G, _Test) ->
     false.
 
@@ -261,9 +269,11 @@ muc_cases() ->
 muc_rsm_cases() ->
     rsm_cases().
 
+%% RSM cases with filtering by countact jid
 with_rsm_cases() ->
     rsm_cases().
 
+%% RSM cases without filtering by countact jid
 rsm_cases() ->
       [pagination_first5,
        pagination_last5,
