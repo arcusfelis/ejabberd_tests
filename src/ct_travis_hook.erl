@@ -38,7 +38,7 @@ init(Id, Opts) ->
 
 %% @doc Called before init_per_suite is called. 
 pre_init_per_suite(Suite,Config,State) ->
-    {Config, fold_start(Suite, State)}.
+    {Config, fold_start(suite, Suite, State)}.
 
 %% @doc Called after init_per_suite.
 post_init_per_suite(Suite,Config,Return,State) ->
@@ -50,11 +50,11 @@ pre_end_per_suite(Suite,Config,State) ->
 
 %% @doc Called after end_per_suite. 
 post_end_per_suite(Suite,Config,Return,State) ->
-    {Return, fold_end(Suite, State)}.
+    {Return, fold_end(suite, Suite, State)}.
 
 %% @doc Called before each init_per_group.
 pre_init_per_group(Group,Config,State) ->
-    {Config, fold_start(Group, State)}.
+    {Config, fold_start(group, Group, State)}.
 
 %% @doc Called after each init_per_group.
 post_init_per_group(Group,Config,Return,State) ->
@@ -66,15 +66,15 @@ pre_end_per_group(Group,Config,State) ->
 
 %% @doc Called after each end_per_group. 
 post_end_per_group(Group,Config,Return,State) ->
-    {Return, fold_end(Group, State)}.
+    {Return, fold_end(group, Group, State)}.
 
 %% @doc Called before each test case.
 pre_init_per_testcase(TC,Config,State) ->
-    {Config, fold_start(TC, State)}.
+    {Config, fold_start(test, TC, State)}.
 
 %% @doc Called after each test case.
 post_end_per_testcase(TC,Config,Return,State) ->
-    {Return, fold_end(TC, State)}.
+    {Return, fold_end(test, TC, State)}.
 
 %% @doc Called after post_init_per_suite, post_end_per_suite, post_init_per_group,
 %% post_end_per_group and post_end_per_testcase if the suite, group or test case failed.
@@ -96,13 +96,16 @@ terminate(State) ->
 %% Same as:
 %% echo -en "travis_fold:start:Name\\r"
 %% echo "Name"
-fold_start(Name, State=#state{log_fd=FD}) ->
-    io:format(FD, "travis_fold:start:~p\r~p~n", [Name, Name]),
+fold_start(Type, Name, State=#state{log_fd=FD}) ->
+    io:format(FD, "travis_fold:start:~s~p\r~p~n", [print_type(Type), Name, Name]),
     State.
 
 %% Same as:
 %% echo -en "travis_fold:end:Name\\r"
-fold_end(Name, State=#state{log_fd=FD}) ->
-    io:format(FD, "travis_fold:end:~p\r", [Name]),
+fold_end(Type, Name, State=#state{log_fd=FD}) ->
+    io:format(FD, "travis_fold:end:~s~p\r", [print_type(Type), Name]),
     State.
 
+print_type(suite) -> "s.";
+print_type(group) -> "g.";
+print_type(test)  -> "t.".
