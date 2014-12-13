@@ -123,9 +123,9 @@ print_type(group) -> "g.";
 print_type(test)  -> "t.".
 
 print_return({skip, Reason}) ->
-    io_lib:format("Skipped ~p~n", [Reason]);
+    io_lib:format("~nSkipped ~p~n", [Reason]);
 print_return({fail, Reason}) ->
-    io_lib:format("Failed ~p~n", [Reason]);
+    io_lib:format("~nFailed ~p~n", [Reason]);
 print_return(_) ->
     "".
 
